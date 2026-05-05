@@ -341,6 +341,113 @@ Include proper service dependencies (`depends_on` with health checks).
 
 ---
 
+## Phase 4.5: Observability — Grafana + Loki (Day 15–16)
+
+Add a full log aggregation stack so you can search and visualise logs across all 4 services in a real dashboard. Everything runs locally in Docker Compose — no external services needed.
+
+### How it works (zero code changes to services)
+
+Pino writes JSON to stdout → Docker captures it → Promtail ships it to Loki → Grafana queries Loki and displays it.
+
+```
+order-service (Pino JSON stdout)
+payment-service (Pino JSON stdout)    →  Promtail  →  Loki  →  Grafana
+inventory-service (Pino JSON stdout)
+notification-service (Pino JSON stdout)
+```
+
+### Step 14a: Add observability services to docker-compose.yml
+
+```yaml
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - '3100:3100'
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - queuing-network
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - queuing-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - '3002:3000'
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - queuing-network
+```
+
+Add `grafana-data` to the `volumes:` block. Grafana runs on port **3002** to avoid conflict with order-service on port 3000.
+
+### Step 14b: Create the Promtail config
+
+Create `observability/promtail-config.yml`:
+
+```yaml
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: service_name
+```
+
+Promtail auto-discovers all Docker containers and labels each log line with the compose service name.
+
+### Step 14c: Connect Grafana to Loki
+
+1. Open `http://localhost:3002` (admin / admin)
+2. Go to **Connections → Data Sources → Add → Loki**
+3. Set URL to `http://loki:3100` → **Save & Test**
+4. Go to **Explore** and run your first query: `{service_name="order-service"}`
+
+### Step 14d: Useful LogQL queries
+
+```
+# All logs from one service
+{service_name="order-service"}
+
+# Trace a single order across ALL services by correlationId
+{service_name=~".+"} | json | correlationId="abc-123"
+
+# All errors across the system
+{service_name=~".+"} | json | level="error"
+
+# Payment failures only
+{service_name="payment-service"} | json | level="error"
+```
+
+**Milestone:** Place an order, open Grafana Explore, filter by the `correlationId` from the response — and watch every log line from order-service, payment-service, inventory-service, and notification-service appear in one unified view.
+
+### CV talking point
+
+> "Integrated Grafana + Loki log aggregation with Promtail, enabling correlation-ID-based distributed tracing across 4 microservices — all logs searchable in a unified dashboard via a single `docker compose up`."
+
+---
+
 ## Phase 5: SSE + Frontend Dashboard (Day 16–20)
 
 This phase ties the whole system together visually and adds SSE — a real-time push pattern that's simpler than WebSocket but perfect for one-way server-to-client updates.
