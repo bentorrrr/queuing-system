@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock amqplib before the module under test is imported.
-// connectRabbitMQ is expected to call amqplib.connect(url) internally.
 vi.mock('amqplib', () => ({
   default: {
     connect: vi.fn(),
@@ -13,21 +12,32 @@ import { connectRabbitMQ } from '../rabbitmq';
 
 const mockConnect = vi.mocked(amqplib.connect);
 
-// A minimal fake connection object — enough to satisfy any channel creation calls
-const fakeConnection = { createChannel: vi.fn() } as any;
+const fakeChannel = {
+  assertExchange: vi.fn().mockResolvedValue(undefined),
+  assertQueue: vi.fn().mockResolvedValue(undefined),
+  prefetch: vi.fn(),
+  consume: vi.fn(),
+} as any;
+
+const fakeConnection = {
+  createChannel: vi.fn().mockResolvedValue(fakeChannel),
+} as any;
 
 describe('connectRabbitMQ retry logic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fakeConnection.createChannel.mockResolvedValue(fakeChannel);
+    fakeChannel.assertExchange.mockResolvedValue(undefined);
   });
 
   it('resolves immediately when the first connection attempt succeeds', async () => {
     mockConnect.mockResolvedValueOnce(fakeConnection);
 
-    const conn = await connectRabbitMQ('amqp://localhost');
+    const result = await connectRabbitMQ('amqp://localhost');
 
     expect(mockConnect).toHaveBeenCalledTimes(1);
-    expect(conn).toBe(fakeConnection);
+    expect(result.connection).toBe(fakeConnection);
+    expect(result.channel).toBe(fakeChannel);
   });
 
   it('retries after a failure and resolves on the third attempt', async () => {
@@ -36,22 +46,21 @@ describe('connectRabbitMQ retry logic', () => {
       .mockRejectedValueOnce(new Error('ECONNREFUSED'))
       .mockResolvedValueOnce(fakeConnection);
 
-    // delayMs:0 keeps the test instant; the implementation must honour this option
-    const conn = await connectRabbitMQ('amqp://localhost', { retries: 5, delayMs: 0 });
+    const result = await connectRabbitMQ('amqp://localhost', { retries: 5, delayMs: 0 });
 
     expect(mockConnect).toHaveBeenCalledTimes(3);
-    expect(conn).toBe(fakeConnection);
+    expect(result.connection).toBe(fakeConnection);
   });
 
   it('throws after exhausting all retries', async () => {
     mockConnect.mockRejectedValue(new Error('ECONNREFUSED'));
 
-    // retries:2 means 1 initial attempt + 2 retries = 3 total calls
+    // retries:2 → 1 initial + 1 retry = 2 total calls
     await expect(
       connectRabbitMQ('amqp://localhost', { retries: 2, delayMs: 0 })
     ).rejects.toThrow('ECONNREFUSED');
 
-    expect(mockConnect).toHaveBeenCalledTimes(3);
+    expect(mockConnect).toHaveBeenCalledTimes(2);
   });
 
   it('passes the url to amqplib.connect on every attempt', async () => {

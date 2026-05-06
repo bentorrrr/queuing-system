@@ -10,5 +10,20 @@
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended"
   ],
-  "ignorePatterns": ["dist", "node_modules", "build", "coverage"]
+  "ignorePatterns": ["dist", "node_modules", "build", "coverage"],
+  "rules": {
+    "@typescript-eslint/no-unused-vars": ["error", {
+      "varsIgnorePattern": "^_",
+      "argsIgnorePattern": "^_",
+      "destructuredArrayIgnorePattern": "^_"
+    }]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off"
+      }
+    }
+  ]
 }

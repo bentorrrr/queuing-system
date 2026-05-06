@@ -11,7 +11,7 @@ const inventoryItemSchema = z.object({
   quantity: z.number().int().positive(),
 });
 
-export const orderCreatedSchema = z.object({
+export const orderCreatedEventSchema = z.object({
   type: z.literal('order.created'),
   timestamp: z.string(),
   correlationId: z.string(),
