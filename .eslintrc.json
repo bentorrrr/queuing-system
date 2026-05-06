@@ -10,7 +10,7 @@
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended"
   ],
-  "ignorePatterns": ["dist", "node_modules", "build", "coverage"],
+  "ignorePatterns": ["dist", "node_modules", "build", "coverage", "**/generated/**"],
   "rules": {
     "@typescript-eslint/no-unused-vars": ["error", {
       "varsIgnorePattern": "^_",
