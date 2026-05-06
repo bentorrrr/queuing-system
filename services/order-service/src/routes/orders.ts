@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { Channel } from 'amqplib';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '../generated/prisma/index.js';
 import { createEvent, publishEvent, ROUTING_KEYS } from '@queuing/shared';
 import type { OrderCreatedEvent } from '@queuing/shared';
 import { db } from '../db.js';
