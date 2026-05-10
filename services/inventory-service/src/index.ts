@@ -48,18 +48,29 @@ async function main() {
           return;
         }
 
-        // Reserve stock for each item (only if sufficient stock)
+        // Pre-check: all items must have sufficient stock before touching any
+        const stockChecks = await Promise.all(
+          event.data.items.map((item) =>
+            db.product.findFirst({
+              where: { sku: item.productId, availableStock: { gte: item.quantity } },
+            }),
+          ),
+        );
+        const insufficientItem = event.data.items.find((_, i) => !stockChecks[i]);
+        if (insufficientItem) {
+          log.warn({ productId: insufficientItem.productId }, 'insufficient stock, cannot reserve');
+          ack();
+          return;
+        }
+
         for (const item of event.data.items) {
-          const updated = await db.product.updateMany({
+          await db.product.updateMany({
             where: { sku: item.productId, availableStock: { gte: item.quantity } },
             data: {
               availableStock: { decrement: item.quantity },
               reservedStock: { increment: item.quantity },
             },
           });
-          if (updated.count === 0) {
-            log.warn({ productId: item.productId, quantity: item.quantity }, 'insufficient stock, skipping item');
-          }
         }
 
         await db.stockReservation.create({
